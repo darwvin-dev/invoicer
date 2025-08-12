@@ -17,7 +17,7 @@ async function main() {
 
   try {
     console.log('Creating customers');
-    const passwordHash = await bcrypt.hash('test', 12);
+    const passwordHash = await bcrypt.hash('test1234', 12);
 
     const created = await CustomerModel.insertMany([
       { name: 'Darwvin', email: 'darwvin@hotmail.com', passwordHash },
