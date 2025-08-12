@@ -1,0 +1,40 @@
+{
+  "name": "invoice-service",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "lint": "eslint .",
+    "prestart": "migrate up & npx tsx src/scripts/seed.ts",
+    "migrate:create": "migrate create"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "type": "module",
+  "dependencies": {
+    "amqplib": "^0.10.8",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.17.1",
+    "pino": "^9.8.0",
+    "pino-http": "^10.5.0",
+    "zod": "^4.0.17"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.2.1",
+    "eslint": "^9.33.0",
+    "ts-migrate-mongoose": "^4.0.9",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  }
+}
