@@ -40,7 +40,7 @@ const Customers = () => {
 
   useEffect(() => { setCurrentPage(1); }, [searchTerm]);
 
-  const fetchCustomers = async (signal=null) => {
+  const fetchCustomers = async (signal = null) => {
     try {
       setLoading(true);
       const res = await axiosInstance.get('/customers', {
@@ -111,7 +111,7 @@ const Customers = () => {
       email: customer.email || '',
       phone: customer.phone || '',
       address: customer.address || '',
-      password: '', confirmPassword: '' 
+      password: '', confirmPassword: ''
     });
     setIsModalOpen(true);
   };
