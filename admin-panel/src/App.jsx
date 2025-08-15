@@ -6,6 +6,7 @@ import Layout from './components/layouts/Layout';
 import InvoiceManagement from './pages/Invoice';
 import 'react-toastify/dist/ReactToastify.css';
 import { ToastContainer } from 'react-toastify';
+import DailyReports from './pages/DailyReports';
 
 function App() {
 
@@ -15,6 +16,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route element={<Layout />}>
           <Route path="/customers" element={<Customers />} />
+          <Route path="/daily-reports" element={<DailyReports />} />
           <Route path="/invoices" element={<InvoiceManagement />} />
         </Route>
       </Routes>

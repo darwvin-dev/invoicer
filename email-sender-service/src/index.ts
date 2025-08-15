@@ -82,7 +82,10 @@ const main = async() => {
   process.on('SIGTERM', shutdown);
 }
 
-main().catch((e) => {
+main().then(res=>{
+  console.log("STARTED Successed")
+  console.log(res)
+}).catch((e) => {
   console.error('Fatal:', e);
   process.exit(1);
 });

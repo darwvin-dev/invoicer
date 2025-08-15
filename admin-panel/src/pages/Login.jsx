@@ -19,7 +19,7 @@ function Login() {
         try {
             const response = await login({ email, password });
             localStorage.setItem('token', response.token);
-            navigate('/dashboard');
+            navigate('/invoices');
         } catch (err) {
             setError(err.message || 'Invalid email or password');
         } finally {

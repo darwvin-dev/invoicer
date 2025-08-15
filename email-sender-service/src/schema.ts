@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 export const DailyReportSchema = z.object({
   type: z.literal('daily_sales_report'),
-  version: z.literal(1),
   dateRange: z.object({
     from: z.iso.datetime(),
     to: z.iso.datetime(),

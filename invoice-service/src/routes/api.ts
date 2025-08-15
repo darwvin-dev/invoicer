@@ -1,12 +1,14 @@
-import invoicesRouter from '@/modules/invoices/invoice.routes';
-import authRouter from '@/modules/auth/auth.routes';
-import customerRoutes from '@/modules/customers/customer.routes';
 import { Router } from 'express';
+import { reportRouter } from '@/modules/reports/report.routes';
+import { customerRouter } from '@/modules/customers/customer.routes';
+import { authRouter } from '@/modules/auth/auth.routes';
+import { invoiceRouter } from '@/modules/invoices/invoice.routes';
 
 const api = Router();
 
-api.use('/customers', customerRoutes);
-api.use('/invoices', invoicesRouter);
+api.use('/customers', customerRouter);
+api.use('/invoices', invoiceRouter);
 api.use('/auth', authRouter);
+api.use('/reports', reportRouter);
 
 export default api;
