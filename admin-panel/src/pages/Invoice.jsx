@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon, DocumentTextIcon,
-  XMarkIcon, ChevronDownIcon, CheckIcon, ClockIcon, CurrencyDollarIcon
+  XMarkIcon, ChevronDownIcon, CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,21 +23,6 @@ const invoiceSchema = z.object({
   ).min(1, 'At least one item is required'),
 });
 
-const StatusBadge = ({ status }) => {
-  const statusMap = {
-    paid: { color: 'bg-green-100 text-green-800', icon: CheckIcon },
-    pending: { color: 'bg-yellow-100 text-yellow-800', icon: ClockIcon },
-    overdue: { color: 'bg-red-100 text-red-800', icon: ClockIcon }
-  };
-  const StatusIcon = (statusMap[status]?.icon || ClockIcon);
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusMap[status]?.color || 'bg-gray-100 text-gray-800'}`}>
-      <StatusIcon className="h-3.5 w-3.5 mr-1" />
-      {status}
-    </span>
-  );
-};
-
 const TableSkeleton = () => (
   <>
     {Array.from({ length: itemsPerPage }).map((_, i) => (
@@ -45,7 +30,6 @@ const TableSkeleton = () => (
         <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-3/4" /></td>
         <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-2/3" /></td>
         <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-1/2" /></td>
-        <td className="px-6 py-4"><div className="h-8 bg-gray-200 rounded-full w-20" /></td>
         <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-3/4" /></td>
         <td className="px-6 py-4 text-right">
           <div className="flex justify-end space-x-2">
@@ -66,9 +50,10 @@ const InvoiceManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [customers, setCustomers] = useState([]);
+
+  // Ref for modal to detect outside clicks
+  const modalRef = useRef(null);
 
   const {
     register,
@@ -89,6 +74,23 @@ const InvoiceManagement = () => {
   const items = watch('items');
   const currency = watch('currency');
 
+  // Handle outside clicks for modal
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (modalRef.current && !modalRef.current.contains(event.target)) {
+        setIsModalOpen(false);
+      }
+    };
+
+    if (isModalOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isModalOpen]);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -97,18 +99,20 @@ const InvoiceManagement = () => {
         const customersRes = await axiosInstance.get('/customers');
         setCustomers(customersRes.data?.data || []);
 
-        // Invoices
+        // Fetch invoices with new response structure
         const invoicesRes = await axiosInstance.get('/invoices', {
           params: {
             page: currentPage,
             limit: itemsPerPage,
-            q: searchTerm || undefined,
-            status: statusFilter !== 'all' ? statusFilter : undefined
+            q: searchTerm || undefined
           }
         });
 
-        setInvoices(invoicesRes.data?.data || []);
-        setTotalPages(invoicesRes.data?.meta?.totalPages || 1);
+        // Handle new response format
+        const { items: invoiceItems, total, page, limit } = invoicesRes.data;
+        setInvoices(invoiceItems || []);
+        setTotalPages(Math.ceil(total / limit) || 1);
+        setCurrentPage(page);
       } catch (error) {
         toast.error('Failed to fetch data');
       } finally {
@@ -116,7 +120,7 @@ const InvoiceManagement = () => {
       }
     };
     fetchData();
-  }, [currentPage, searchTerm, statusFilter]);
+  }, [currentPage, searchTerm]);
 
   const fetchInvoices = async () => {
     try {
@@ -125,12 +129,15 @@ const InvoiceManagement = () => {
         params: {
           page: currentPage,
           limit: itemsPerPage,
-          q: searchTerm || undefined,
-          status: statusFilter !== 'all' ? statusFilter : undefined
+          q: searchTerm || undefined
         }
       });
-      setInvoices(response.data?.data || []);
-      setTotalPages(response.data?.meta?.totalPages || 1);
+      
+      // Handle new response format
+      const { items: invoiceItems, total, page, limit } = response.data;
+      setInvoices(invoiceItems || []);
+      setTotalPages(Math.ceil(total / limit) || 1);
+      setCurrentPage(page);
     } catch {
       toast.error('Failed to fetch invoices');
     } finally {
@@ -161,13 +168,12 @@ const InvoiceManagement = () => {
   const onSubmit = async (data) => {
     try {
       setLoading(true);
-      const invoiceTotal = data.items.reduce((sum, it) => sum + (it.quantity * it.unitPrice), 0);
 
       if (currentInvoice) {
-        await axiosInstance.patch(`/invoices/${currentInvoice._id}`, { ...data, invoiceTotal });
+        await axiosInstance.patch(`/invoices/${currentInvoice._id}`, data);
         toast.success('Invoice updated successfully');
       } else {
-        await axiosInstance.post('/invoices', { ...data, invoiceTotal });
+        await axiosInstance.post('/invoices', data);
         toast.success('Invoice created successfully');
         setCurrentPage(1);
       }
@@ -196,6 +202,7 @@ const InvoiceManagement = () => {
   const addItem = () => {
     setValue('items', [...items, { sku: '', quantity: 1, unitPrice: 0 }]);
   };
+  
   const removeItem = (index) => {
     if (items.length <= 1) return;
     const next = [...items];
@@ -226,7 +233,7 @@ const InvoiceManagement = () => {
 
       {/* Filters */}
       <div className="bg-white shadow rounded-lg p-4 mb-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex">
           <div className="relative w-full md:w-64">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
@@ -238,33 +245,6 @@ const InvoiceManagement = () => {
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
-          </div>
-
-          <div className="relative">
-            <button
-              type="button"
-              className="inline-flex justify-center w-full rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none"
-              onClick={() => setIsDropdownOpen((v) => !v)}
-            >
-              {statusFilter === 'all' ? 'All Statuses' : statusFilter}
-              <ChevronDownIcon className="ml-2 -mr-1 h-5 w-5" />
-            </button>
-
-            {isDropdownOpen && (
-              <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
-                <div className="py-1">
-                  {['all', 'paid', 'pending', 'overdue'].map(s => (
-                    <button
-                      key={s}
-                      onClick={() => { setStatusFilter(s); setIsDropdownOpen(false); }}
-                      className={`block w-full text-left px-4 py-2 text-sm ${statusFilter === s ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`}
-                    >
-                      {s === 'all' ? 'All Statuses' : s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -278,7 +258,6 @@ const InvoiceManagement = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice #</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
@@ -288,7 +267,7 @@ const InvoiceManagement = () => {
                 <TableSkeleton />
               ) : invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center">
+                  <td colSpan={5} className="px-6 py-8 text-center">
                     <DocumentTextIcon className="mx-auto h-12 w-12 text-gray-400" />
                     <h3 className="mt-2 text-sm font-medium text-gray-900">No invoices</h3>
                     <p className="mt-1 text-sm text-gray-500">Get started by creating a new invoice.</p>
@@ -316,9 +295,6 @@ const InvoiceManagement = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(inv.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <StatusBadge status={inv.status || 'pending'} />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className="flex items-center">
@@ -384,30 +360,33 @@ const InvoiceManagement = () => {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Fixed Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div
-              className="fixed inset-0 transition-opacity"
-              aria-hidden="true"
-              onClick={() => setIsModalOpen(false)}
-            >
-              <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
-            </div>
+        <>
+          <div
+            className="fixed inset-0 bg-black bg-opacity-0 transition-opacity duration-300 z-40"
+            style={{ backgroundColor: isModalOpen ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0)' }}
+            onClick={() => setIsModalOpen(false)}
+          />
 
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
-              className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full"
-              onClick={(e) => e.stopPropagation()}
+              ref={modalRef}
+              className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
             >
-              <div className="bg-white px-6 pt-6 pb-4">
+              <div className="p-6">
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className="text-2xl font-bold text-gray-900">
                       {currentInvoice ? `Edit Invoice #${currentInvoice._id.slice(-6)}` : 'Create New Invoice'}
                     </h3>
                   </div>
-                  <button type="button" className="text-gray-400 hover:text-gray-500" onClick={() => setIsModalOpen(false)}>
+                  <button
+                    type="button"
+                    className="text-gray-400 hover:text-gray-500 focus:outline-none"
+                    onClick={() => setIsModalOpen(false)}
+                    aria-label="Close modal"
+                  >
                     <XMarkIcon className="h-6 w-6" />
                   </button>
                 </div>
@@ -570,9 +549,8 @@ const InvoiceManagement = () => {
                 </form>
               </div>
             </div>
-
           </div>
-        </div>
+        </>
       )}
     </div>
   );
