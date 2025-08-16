@@ -1,6 +1,9 @@
 import { ZodError } from 'zod';
 import type { Request, Response, NextFunction } from 'express';
 import { AppError, BadRequestError, InternalServerError } from './errors.js';
+import { getReasonPhrase } from 'http-status-codes';
+
+const isDev = process.env.NODE_ENV !== 'production';
 
 export function httpErrorMiddleware(err: unknown, _req: Request, res: Response, _next: NextFunction) {
   if (err instanceof ZodError) {
@@ -9,16 +12,16 @@ export function httpErrorMiddleware(err: unknown, _req: Request, res: Response, 
       message: i.message,
       code: i.code,
     }));
-    const bad = new BadRequestError('Validation error', details);
-    return send(res, bad);
+    return send(res, new BadRequestError('Validation error', details));
   }
 
   if (err instanceof AppError) {
     return send(res, err);
   }
 
-  const unknown = new InternalServerError('Unexpected error');
-  return send(res, unknown);
+  console.error('Unexpected error:', err);
+
+  return send(res, new InternalServerError('Unexpected error'));
 }
 
 function send(res: Response, e: AppError) {
@@ -26,7 +29,8 @@ function send(res: Response, e: AppError) {
     error: {
       message: e.message,
       statusCode: e.statusCode,
-      details: e.details ?? undefined,
+      reason: getReasonPhrase(e.statusCode),
+      details: isDev ? e.details : undefined,
     }
   };
   res.status(e.statusCode).json(body);

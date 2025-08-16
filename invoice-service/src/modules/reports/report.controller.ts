@@ -1,50 +1,69 @@
-import { Request, Response, NextFunction } from 'express';
-import { DailyReportQueryDto, ListReportsQueryDto } from './report.dto.js';
-import { computeDailyReport, saveDailyReport, listSavedReports, getSavedReportById } from './report.service.js';
-import { publishJson } from '@/config/rabbit.js';
+import { Request, Response, NextFunction } from "express";
+import {
+  DailyReportQueryDto,
+  ListReportsQueryDto,
+} from "./report.dto.js";
+import {
+  computeDailyReport,
+  saveDailyReport,
+  listSavedReports,
+  getSavedReportById,
+} from "./report.service.js";
+import { publishJson } from "@/config/rabbit.js";
+import {
+  BadRequestError,
+  NotFoundError,
+} from "@/utils/errors.js";
 
 export const ReportController = {
-    // GET /reports/daily?date=YYYY-MM-DD&publish=true
-    async getDaily(req: Request, res: Response, next: NextFunction) {
-        try {
-            const { date, publish } = DailyReportQueryDto.parse(req.query);
-            const report = await computeDailyReport({ date });
+  /** GET /reports/daily?date=YYYY-MM-DD&publish=true */
+  getDaily: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = DailyReportQueryDto.safeParse(req.query);
+      if (!parsed.success) {
+        throw new BadRequestError("Invalid query", parsed.error.issues);
+      }
+      const { date, publish } = parsed.data;
 
-            if (publish) {
-                await publishJson(report);
-                await saveDailyReport(report);
-            }
+      const report = await computeDailyReport({ date });
 
-            res.json(report);
-        } catch (err) {
-            if ((err as any).issues) {
-                return res.status(400).json({ error: { code: 'BAD_QUERY', details: (err as any).issues } });
-            }
-            next(err);
-        }
-    },
+      if (publish) {
+        await publishJson(report);
+        await saveDailyReport(report);
+      }
 
-    async list(req: Request, res: Response, next: NextFunction) {
-        try {
-            const q = ListReportsQueryDto.parse(req.query);
-            const data = await listSavedReports(q);
-            res.json(data);
-        } catch (err) {
-            if ((err as any).issues) {
-                return res.status(400).json({ error: { code: 'BAD_QUERY', details: (err as any).issues } });
-            }
-            next(err);
-        }
-    },  
+      return res.json({ data: report });
+    } catch (err) {
+      next(err);
+    }
+  },
 
-    async getById(req: Request, res: Response, next: NextFunction) {
-        try {
-            if (!req.params.id) return res.status(404).json({ message: "Nof Found." })
-            const data = await getSavedReportById(req.params.id);
-            res.json(data);
-        } catch (err: any) {
-            if (err?.status === 404) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Report not found' } });
-            next(err);
-        }
-    },
+  /** GET /reports */
+  list: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = ListReportsQueryDto.safeParse(req.query);
+      if (!parsed.success) {
+        throw new BadRequestError("Invalid query", parsed.error.issues);
+      }
+      const data = await listSavedReports(parsed.data);
+      return res.json(data); 
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /** GET /reports/:id */
+  getById: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = req.params.id;
+      if (!id) throw new NotFoundError("Report not found");
+
+      const data = await getSavedReportById(id);
+      if (!data) throw new NotFoundError("Report not found");
+
+      return res.json({ data });
+    } catch (err) {
+      next(err);
+    }
+  },
 };
