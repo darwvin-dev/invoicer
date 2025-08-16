@@ -1,4 +1,4 @@
-import { InvoiceController } from '@/modules/invoices/invoice.controller';
+import { InvoiceController } from '@/modules/invoices/invoice.controller.js';
 import { Router, type RequestHandler } from 'express';
 
 type getIdType = RequestHandler<{ id: string }>;

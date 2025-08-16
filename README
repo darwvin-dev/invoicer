@@ -1,0 +1,322 @@
+Invoicer — Invoice & Daily Sales Report System
+
+A small microservices playground that does three things well:
+
+Store invoices (Node.js + Express + MongoDB + Mongoose)
+
+Compute a daily sales report (cron; timezone-aware) and publish it to RabbitMQ
+
+Consume the report and “send an email” (simulated; pretty-printed logs)
+
+Plus a minimal React admin panel served by Nginx.
+
+What’s inside?
+invoicer/
+├─ admin-panel/               # React (Vite) -> built & served by Nginx
+├─ invoice-service/           # Express API + Mongo + cron (publishes report)
+├─ email-sender-service/      # RabbitMQ consumer (logs "email" contents)
+├─ docker-compose.yml         # One command to run everything
+├─ logs/                      # Host-mounted logs from containers (create this)
+└─ README.md                  # You are here
+
+Quick start (Docker)
+
+Requires: Docker Desktop (Win/Mac) or Docker Engine (Linux)
+
+Clone & open the project
+
+Environment files
+
+invoice-service/.env – choose Atlas or local Mongo.
+
+Atlas (recommended while developing):
+
+NODE_ENV=production
+PORT=3000
+
+# Example Atlas URI – replace with your own
+MONGO_URI=mongodb+srv://<user>:<pass>@cluster0.<hash>.mongodb.net/invoicedb?retryWrites=true&w=majority
+
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+TZ=Europe/Amsterdam
+LOG_LEVEL=info
+CORS_ORIGINS=http://localhost:8080
+
+JWT_ACCESS_SECRET=change_me_access
+JWT_REFRESH_SECRET=change_me_refresh
+ACCESS_EXPIRES_IN=15m
+REFRESH_EXPIRES_IN=7d
+COOKIE_DOMAIN=localhost
+COOKIE_SECURE=false
+
+REPORT_CRON=0 12 * * *
+REPORT_QUEUE=daily_sales_report
+
+Local Mongo (if you add a mongo service to compose):
+
+MONGO_URI=mongodb://mongo:27017/invoicedb
+
+email-sender-service/.env
+
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+REPORT_QUEUE=daily_sales_report
+LOG_LEVEL=info
+TZ=Europe/Amsterdam
+
+Tip (Windows + VPN/Proxy): if you use a system HTTP proxy for Docker, exclude .mongodb.net from proxy (see “Troubleshooting” below).
+
+Compose up:
+
+docker compose build --no-cache
+docker compose up -d
+docker compose logs -f rabbitmq invoice-service email-sender-service admin-panel
+
+Admin UI: http://localhost:8080
+
+Invoice API: http://localhost:3000/api/v1
+
+RabbitMQ UI: http://localhost:15672 (guest/guest)
+
+Trigger a daily report now (instead of waiting for cron):
+
+curl "http://localhost:3000/api/v1/reports/daily?publish=true"
+
+You should see email-sender-service printing a nice, formatted report log.
+
+Running locally (without Docker)
+Prereqs
+
+Node.js 24+
+
+MongoDB (Atlas or local)
+
+RabbitMQ (Docker is easiest: docker run -p 5672:5672 -p 15672:15672 rabbitmq:3.13-management)
+
+1) invoice-service
+cd invoice-service
+cp .env.example .env   # or craft your own
+npm i
+npm run dev            # tsx watch
+# or
+npm run build && npm start
+
+
+API root: http://localhost:3000/api/v1
+
+To seed demo data (if you added seed script): it runs from prestart or directly:
+npx tsx src/scripts/seed.ts
+
+2) email-sender-service
+cd email-sender-service
+cp .env.example .env
+npm i
+npm run dev            # tsx src/index.ts
+# or
+npm run build && npm start
+
+3) admin-panel
+cd admin-panel
+npm i
+npm run dev            # vite dev (not Nginx)
+# or build:
+npm run build
+
+Endpoints (invoice-service)
+
+Base path: /api/v1
+
+Auth
+
+POST /auth/login
+Body: { "email": "...", "password": "..." }
+→ { user, accessToken } + sets refresh_token cookie
+
+POST /auth/refresh
+Uses cookie or { refreshToken }
+→ { accessToken } + rotates refresh_token cookie
+
+POST /auth/logout
+→ 204 + clears cookie
+
+Customers
+
+POST /customers
+
+GET /customers/:id
+
+GET /customers?q=&page=&limit=&sort=&order=&createdFrom=&createdTo=
+
+PATCH /customers/:id
+
+DELETE /customers/:id
+
+Invoices
+
+POST /invoices
+
+{
+  "customerId": "ObjectId",
+  "currency": "EUR",
+  "items": [{ "sku": "SKU1", "quantity": 2, "unitPrice": 10 }],
+  "createdAt": "ISO8601"  // optional; defaults to now
+}
+
+
+Total is auto-calculated; quantity/price validated.
+
+GET /invoices?from&to&page&limit
+
+GET /invoices/:id
+
+PATCH /invoices/:id
+
+DELETE /invoices/:id
+
+Reports
+
+GET /reports/daily?date=YYYY-MM-DD&publish=bool
+Date is interpreted in TZ (e.g., Europe/Amsterdam), covering 00:00–23:59 of previous day if date is omitted.
+If publish=true: publishes to RabbitMQ and saves report.
+
+GET /reports?from&to&page&limit
+
+GET /reports/:id
+
+How the report works
+
+At 12:00 (configurable: REPORT_CRON) in timezone TZ:
+
+Aggregate invoices from the previous day
+
+Sum totalSalesAmount
+
+Sum per-SKU quantities into items
+
+Publish a message like:
+
+{
+  "type": "daily_sales_report",
+  "version": 1,
+  "dateRange": {
+    "from": "2025-08-09T00:00:00Z",
+    "to": "2025-08-09T23:59:59Z",
+    "tz": "Europe/Amsterdam"
+  },
+  "totalSalesAmount": 1234.56,
+  "items": [ { "sku": "SKU001", "totalQuantity": 10 } ]
+}
+
+
+The email-sender-service consumes the queue and prints a formatted “email”.
+(You can easily wire a real SMTP with Nodemailer.)
+
+Testing
+
+Inside invoice-service we use Jest (+ ts-jest) and mongodb-memory-server:
+
+cd invoice-service
+npm test
+# or watch
+npm run test:watch
+
+
+Tests include:
+
+Mongo connection (success via memory server, failure simulation)
+
+Cron unit test (mocked publishJson, checks computeDailyReport)
+
+E2E routes: Auth, Customers, Invoices, Reports
+
+If you use path aliases (@/), we run tsc-alias on build and configure Jest via moduleNameMapper.
+
+Logging
+
+invoice-service writes structured logs, and we also mount /app/logs to ./logs on the host in compose.
+
+To tail logs:
+
+docker compose logs -f invoice-service
+docker compose logs -f email-sender-service
+docker compose logs -f rabbitmq
+
+Common pitfalls & fixes (worth reading)
+1) Nginx upstream not found: invoice-service
+
+If admin-panel’s Nginx points to invoice-service but it’s not running/healthy, Nginx fails boot.
+Fix: run via compose; ensure depends_on and healthcheck for RabbitMQ are OK. The API is on http://invoice-service:3000 inside the compose network.
+
+2) Vite build path issues
+
+If you see Could not resolve "./pages/login", it’s usually a wrong import path (case sensitivity). Fix the import.
+Also, the final stage should only copy /app/dist to Nginx; don’t copy /app/build unless it exists.
+
+3) Mongo Atlas + Docker proxy/TLS
+
+If you use a proxy for Docker, Atlas connections may fail with:
+
+MongoNetworkError: Client network socket disconnected before secure TLS connection was established
+
+
+Fix: tell Docker to not proxy Atlas:
+
+Docker Desktop → Settings → Docker Engine → set:
+
+{
+  "proxies": {
+    "default": {
+      "httpProxy":  "http://host.docker.internal:10808",
+      "httpsProxy": "http://host.docker.internal:10808",
+      "noProxy": "localhost,127.0.0.1,.local,.internal,rabbitmq,mongo,invoice-service,admin-panel,.mongodb.net"
+    }
+  }
+}
+
+
+Apply & Restart.
+Also make sure the runtime image has CA certs:
+
+RUN apk add --no-cache ca-certificates && update-ca-certificates
+
+4) Duplicate Mongoose index warnings
+
+You likely defined an index twice (e.g., { index: true } and schema.index(...)). Remove one.
+
+5) ESM + path aliases
+
+In TS: import x from '@/foo/bar.js' (note the .js extension even in TS, so the emitted ESM resolves correctly at runtime).
+
+Use tsc-alias on build (already in your package.json script):
+"build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json"
+
+Handy commands
+# Rebuild everything fresh
+docker compose down
+docker compose build --no-cache
+docker compose up -d
+
+# Tail only API logs
+docker compose logs -f invoice-service
+
+# Publish a report now (and save)
+curl "http://localhost:3000/api/v1/reports/daily?publish=true"
+
+# Create an invoice (example)
+curl -X POST http://localhost:3000/api/v1/invoices \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customerId": "000000000000000000000001",
+    "currency": "EUR",
+    "items": [
+      { "sku": "SKU1", "quantity": 2, "unitPrice": 10 },
+      { "sku": "SKU2", "quantity": 1, "unitPrice": 20 }
+    ]
+  }'
+
+Customize
+
+Cron time / timezone: set REPORT_CRON (crontab format) and TZ in invoice-service/.env.
+
+CORS: CORS_ORIGINS in invoice-service/.env.
+
+JWT: secrets & expirations are env-driven.

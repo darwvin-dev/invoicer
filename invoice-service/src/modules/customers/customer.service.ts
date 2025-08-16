@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { StatusCodes, getReasonPhrase } from 'http-status-codes';
 import z from 'zod';
-import { CustomerModel, type CustomerDoc } from './customer.model';
+import { CustomerModel, type CustomerDoc } from './customer.model.js';
 
 /**
  * Helpers

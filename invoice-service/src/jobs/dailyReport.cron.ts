@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { computeDailyReport } from '@/modules/reports/report.service.js';
-import { publishJson } from '@/config/rabbit';
+import { publishJson } from '@/config/rabbit.js';
 
 export const scheduleDailyReport = () =>   {
   const tz = process.env.TZ || 'Europe/Berlin';

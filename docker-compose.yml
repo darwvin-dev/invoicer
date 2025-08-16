@@ -28,25 +28,28 @@ services:
       context: ./invoice-service
       dockerfile: Dockerfile
     container_name: invoice-service
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      MONGO_URI: ${MONGO_URI}
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
-      TZ: ${TZ:-Europe/Amsterdam}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change_me_access}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change_me_refresh}
-      ACCESS_EXPIRES_IN: ${ACCESS_EXPIRES_IN:-15m}
-      REFRESH_EXPIRES_IN: ${REFRESH_EXPIRES_IN:-7d}
-      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-localhost}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      REPORT_CRON: ${REPORT_CRON:-0 12 * * *}
-      REPORT_QUEUE: ${REPORT_QUEUE:-daily_sales_report}
+    env_file:
+      - ./invoice-service/.env
     ports:
       - "3000:3000"
     depends_on:
       rabbitmq:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      
+  email-sender-service:
+    build:
+      context: ./email-sender-service
+    container_name: email-sender-service
+    environment:
+      RABBITMQ_URL: amqp://rabbitmq:5672
+    env_file:
+      - ./email-sender-service/.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
