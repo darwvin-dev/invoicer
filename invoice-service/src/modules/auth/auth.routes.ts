@@ -1,25 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { login, logout, refresh, register } from './auth.service.js';
+import { login, logout, refresh } from './auth.service.js';
 
 export const authRouter = Router();
 
-const RegisterDto = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-  password: z.string().min(8)
-});
 const LoginDto = z.object({
   email: z.string().email(),
   password: z.string().min(8)
-});
-
-authRouter.post('/register', async (req, res, next) => {
-  try {
-    const { name, email, password } = RegisterDto.parse(req.body);
-    const user = await register(name, email, password);
-    res.status(201).json({ user });
-  } catch (e) { next(e); }
 });
 
 authRouter.post('/login', async (req, res, next) => {

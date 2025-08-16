@@ -1,40 +1,73 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions, JwtPayload } from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
+import { number, z } from 'zod';
 import { CustomerModel } from '@/modules/customers/customer.model.js';
 import { RefreshTokenModel } from './refreshToken.model.js';
 
-const ACCESS_SECRET  = process.env.JWT_ACCESS_SECRET!;
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET!;
-const ACCESS_EXPIRES_IN  = process.env.ACCESS_EXPIRES_IN || '15m';
-const REFRESH_EXPIRES_IN = process.env.REFRESH_EXPIRES_IN || '7d';
+const Env = z.object({
+  JWT_ACCESS_SECRET: z.string().min(1),
+  JWT_REFRESH_SECRET: z.string().min(1),
+  ACCESS_EXPIRES_IN: z.string().min(1).default('15m'), 
+  REFRESH_EXPIRES_IN: z.string().min(1).default('7d'),
+}).parse(process.env);
 
-export async function register(name: string, email: string, password: string) {
-  const exists = await CustomerModel.findOne({ email });
-  if (exists) throw Object.assign(new Error('Email already used'), { status: 409 });
-  const passwordHash = await bcrypt.hash(password, 12);
-  const user = await CustomerModel.create({ name, email, passwordHash });
-  return sanitize(user);
+const ACCESS_OPTS: SignOptions  = { expiresIn: toSeconds(Env.ACCESS_EXPIRES_IN) };
+const REFRESH_OPTS: SignOptions = { expiresIn: toSeconds(Env.REFRESH_EXPIRES_IN) };
+
+class HttpError extends Error { constructor(public status: number, msg: string){ super(msg);} }
+const boom = (s: number, m: string) => new HttpError(s, m);
+
+type PublicUser = { id: string; name: string; email: string; createdAt: Date };
+type JwtRefreshPayload = JwtPayload & { jti: string; sub: string };
+
+function sanitize(u: any): PublicUser {
+  return { id: String(u._id), name: u.name, email: u.email, createdAt: u.createdAt };
 }
 
-export async function login(email: string, password: string) {
+function toSeconds(s?: string): number {
+  const v = (s ?? '').trim();
+  if (!v) throw new Error('Invalid duration: empty');
+
+  const m = /^(\d+)\s*([smhd])$/i.exec(v) || [1,20];
+
+  const n = parseInt((m[1]).toString(), 10);
+  switch ((m[2])?.toString().toLowerCase()) {
+    case 's': return n;
+    case 'm': return n * 60;
+    case 'h': return n * 3600;
+    case 'd': return n * 86400;
+    default:  throw new Error(`Invalid duration unit: ${v}`);
+  }
+}
+
+function toMillis(s: string): number {
+  return toSeconds(s) * 1000;
+}
+
+export const login = async(email: string, password: string) => {
   const user = await CustomerModel.findOne({ email });
-  if (!user) throw Object.assign(new Error('Invalid credentials'), { status: 401 });
+  if (!user) throw boom(401, 'Invalid credentials');
+
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) throw Object.assign(new Error('Invalid credentials'), { status: 401 });
+  if (!ok) throw boom(401, 'Invalid credentials');
 
   const { accessToken, refreshToken, jti, refreshExp } = await issueTokens(String(user._id));
   await RefreshTokenModel.create({ jti, customerId: user._id, expiresAt: refreshExp });
+
   return { user: sanitize(user), accessToken, refreshToken };
 }
 
 export async function refresh(oldToken: string) {
-  let payload: any;
-  try { payload = jwt.verify(oldToken, REFRESH_SECRET); } 
-  catch { throw Object.assign(new Error('Invalid refresh token'), { status: 401 }); }
+  let payload: JwtRefreshPayload;
+  try {
+    payload = jwt.verify(oldToken, Env.JWT_REFRESH_SECRET) as JwtRefreshPayload;
+  } catch {
+    throw boom(401, 'Invalid refresh token');
+  }
 
   const rec = await RefreshTokenModel.findOne({ jti: payload.jti, isRevoked: false });
-  if (!rec) throw Object.assign(new Error('Refresh token revoked'), { status: 401 });
+  if (!rec) throw boom(401, 'Refresh token revoked');
 
   rec.isRevoked = true;
   await rec.save();
@@ -47,30 +80,17 @@ export async function refresh(oldToken: string) {
 
 export async function logout(refreshToken: string) {
   try {
-    const payload: any = jwt.verify(refreshToken, REFRESH_SECRET);
+    const payload = jwt.verify(refreshToken, Env.JWT_REFRESH_SECRET) as JwtRefreshPayload;
     await RefreshTokenModel.updateOne({ jti: payload.jti }, { $set: { isRevoked: true } });
-  } catch { 
-    
-  }
-}
-
-function sanitize(u: any) {
-  return { id: String(u._id), name: u.name, email: u.email, createdAt: u.createdAt };
+  } catch { }
 }
 
 async function issueTokens(sub: string) {
   const jti = randomUUID();
-  const accessToken = jwt.sign({ sub }, ACCESS_SECRET,  { expiresIn: ACCESS_EXPIRES_IN });
-  const refreshToken = jwt.sign({ sub, jti }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES_IN });
-  const now = new Date();
-  const refreshExp = new Date(now.getTime() + parseJwtExpMs(REFRESH_EXPIRES_IN));
-  return { accessToken, refreshToken, jti, refreshExp };
-}
 
-function parseJwtExpMs(s: string) {
-  const m = /^(\d+)([mhd])$/.exec(s)!;
-  const n = parseInt(m[1], 10);
-  if (m[2] === 'm') return n * 60_000;
-  if (m[2] === 'h') return n * 3_600_000;
-  return n * 86_400_000;
+  const accessToken  = jwt.sign({ sub },      Env.JWT_ACCESS_SECRET,  ACCESS_OPTS);
+  const refreshToken = jwt.sign({ sub, jti }, Env.JWT_REFRESH_SECRET, REFRESH_OPTS);
+
+  const refreshExp = new Date(Date.now() + toMillis(Env.REFRESH_EXPIRES_IN));
+  return { accessToken, refreshToken, jti, refreshExp };
 }
