@@ -55,7 +55,7 @@ describe("Auth E2E", () => {
     function pickCookiePair(setCookie: string[] | string, name = 'refresh_token') {
         const arr = Array.isArray(setCookie) ? setCookie : [setCookie];
         for (const c of arr) {
-            const pair = c.split(';')[0]; // فقط name=value
+            const pair = c.split(';')[0]; =
             if (pair.trim().startsWith(`${name}=`)) return pair;
         }
         return '';

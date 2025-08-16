@@ -36,7 +36,7 @@ type DailyReport = {
 type ComputeOpts = { tz?: string; date?: string };
 
 describe("scheduleDailyReport()", () => {
-  it("runOnce -> computeDailyReport سپس publishJson", async () => {
+  it("runOnce -> computeDailyReport then publishJson", async () => {
     const reportSvc = await import("@/modules/reports/report.service");
     const computeMock = reportSvc.computeDailyReport as unknown as
       jest.MockedFunction<(arg?: ComputeOpts) => Promise<DailyReport>>;
