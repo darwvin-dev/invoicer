@@ -13,7 +13,12 @@ type ItemDB = InferSchemaType<typeof Item>;
 
 const InvoiceSchema = new Schema(
   {
-    customerId: { type: String, required: true, trim: true },
+    customerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Customer',
+      required: true,
+      index: true,
+    },
     createdAt: { type: Date, default: () => new Date(), index: true },
     currency: { type: String, required: true, trim: true },
     items: {
