@@ -1,6 +1,6 @@
 import './index.css';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import Login from './pages/login';
+import Login from './pages/Login';
 import Customers from './pages/Customers';
 import Layout from './components/layouts/Layout';
 import InvoiceManagement from './pages/Invoice';
