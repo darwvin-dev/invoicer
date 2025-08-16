@@ -4,21 +4,12 @@ import { StatusCodes, getReasonPhrase } from "http-status-codes";
 import z from "zod";
 import { CustomerModel, type CustomerDoc } from "./customer.model.js";
 import bcrypt from "bcryptjs";
+import { AppError, BadRequestError, ConflictError, NotFoundError } from "@/utils/errors.js";
 
 const asyncHandler =
   <T extends (...args: any[]) => Promise<any>>(fn: T) =>
-  (req: Request, res: Response, next: NextFunction) =>
-    fn(req, res, next).catch(next);
-
-class AppError extends Error {
-  statusCode: number;
-  details?: unknown;
-  constructor(statusCode: number, message?: string, details?: unknown) {
-    super(message || getReasonPhrase(statusCode));
-    this.statusCode = statusCode;
-    this.details = details;
-  }
-}
+    (req: Request, res: Response, next: NextFunction) =>
+      fn(req, res, next).catch(next);
 
 const customerProjection = "-passwordHash" as const;
 
@@ -74,28 +65,23 @@ export class CustomerController {
         err?.code === 11000 &&
         (err?.keyPattern?.email || err?.keyValue?.email)
       ) {
-        throw new AppError(StatusCodes.CONFLICT, "Email is already in use");
+        throw new ConflictError("Email is already in use");
       }
       if (err?.name === "ValidationError") {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          "Validation failed",
-          err?.errors
-        );
+        throw new BadRequestError("Validation failed", err?.errors);
       }
-      throw err;
+      throw err as AppError;
     }
   });
 
   static getById = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    if (!isValidObjectId(id))
-      throw new AppError(StatusCodes.BAD_REQUEST, "Invalid id");
+    if (!isValidObjectId(id)) throw new NotFoundError("Invalid id");
 
     const doc = await CustomerModel.findById(id)
       .select(customerProjection)
       .lean();
-    if (!doc) throw new AppError(StatusCodes.NOT_FOUND, "Customer not found");
+    if (!doc) throw new NotFoundError("Customer not found");
 
     return res.json({ data: doc });
   });
@@ -157,18 +143,14 @@ export class CustomerController {
 
   static update = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    if (!isValidObjectId(id))
-      throw new AppError(StatusCodes.BAD_REQUEST, "Invalid id");
+    if (!isValidObjectId(id)) throw new BadRequestError("Invalid id");
 
     const body = updateBodySchema.parse(req.body);
 
     try {
       if (body.password) {
         if (body.password.length < 8) {
-          throw new AppError(
-            StatusCodes.BAD_REQUEST,
-            "Password must be at least 8 characters"
-          );
+          throw new BadRequestError("Password must be at least 8 characters");
         }
         const salt = await bcrypt.genSalt(10);
         body.password = await bcrypt.hash(body.password, salt);
@@ -182,37 +164,28 @@ export class CustomerController {
         { new: true, runValidators: true, projection: customerProjection }
       ).lean();
 
-      if (!updated)
-        throw new AppError(StatusCodes.NOT_FOUND, "Customer not found");
+      if (!updated) throw new NotFoundError("Customer not found");
       return res.json({ data: updated });
     } catch (err: any) {
       if (
         err?.code === 11000 &&
         (err?.keyPattern?.email || err?.keyValue?.email)
       ) {
-        throw new AppError(StatusCodes.CONFLICT, "Email is already in use");
+        throw new ConflictError("Email is already in use");
       }
       if (err?.name === "ValidationError") {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          "Validation failed",
-          err?.errors
-        );
+        throw new BadRequestError("Validation failed", err?.errors);
       }
-      throw err;
+      throw err as AppError;
     }
   });
 
   static remove = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    if (!isValidObjectId(id))
-      throw new AppError(StatusCodes.BAD_REQUEST, "Invalid id");
+    if (!isValidObjectId(id)) throw new BadRequestError("Invalid id");
 
-    const deleted = await CustomerModel.findByIdAndDelete(id)
-      .select("_id")
-      .lean();
-    if (!deleted)
-      throw new AppError(StatusCodes.NOT_FOUND, "Customer not found");
+    const deleted = await CustomerModel.deleteOne({ _id: id })
+    if (!deleted) throw new NotFoundError("Customer not found");
 
     return res.status(StatusCodes.NO_CONTENT).send();
   });

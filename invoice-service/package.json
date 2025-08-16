@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
     "start": "node dist/server.js",
     "test": "cross-env NODE_ENV=test TZ=UTC jest",
-    "test:watch": "cross-env NODE_ENV=test TZ=UTC jest --watch",
+    "test:e2e": "cross-env NODE_ENV=test TZ=UTC jest --config jest.e2e.config.cjs",
     "lint": "eslint .",
     "prestart": "migrate up & npx tsx src/scripts/seed.ts",
     "migrate:create": "migrate create"

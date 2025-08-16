@@ -4,14 +4,14 @@ import mongoose from "mongoose";
 let mongod: MongoMemoryServer | null = null;
 
 export async function startInMemoryMongo() {
+  if (mongod) return;
   mongod = await MongoMemoryServer.create();
   const uri = mongod.getUri();
-  process.env.MONGO_URI = uri; 
-  return uri;
+  await mongoose.connect(uri, { dbName: "test" });
 }
 
 export async function stopInMemoryMongo() {
-  await mongoose.connection.close().catch(() => {});
+  await mongoose.disconnect();
   if (mongod) {
     await mongod.stop();
     mongod = null;

@@ -1,8 +1,9 @@
 import type { Invoice } from '@/types/invoice.js';
 import type { CreateInvoiceInput, ListQueryInput, UpdateInvoiceInput } from './invoice.dto.js';
 import { InvoiceModel } from './invoice.model.js';
-import type { FilterQuery } from 'mongoose';
+import { isValidObjectId, type FilterQuery } from 'mongoose';
 import type { InvoiceDoc } from './invoice.model.js';
+import { BadRequestError } from '@/utils/errors.js';
 
 export class NotFoundError extends Error {
   status = 404 as const;
@@ -73,7 +74,10 @@ export async function updateInvoice(id: string, dto: UpdateInvoiceInput): Promis
 }
 
 /** DELETE /invoices/:id */
-export async function deleteInvoice(id: string): Promise<void> {
-  const res = await InvoiceModel.findByIdAndDelete(id).lean().exec();
-  if (!res) throw new NotFoundError();
+export async function deleteInvoice(id: string): Promise<boolean> {
+  if (!isValidObjectId(id)) {
+    throw new BadRequestError("Invalid id");
+  }
+  const res = await InvoiceModel.deleteOne({ _id: id }).exec();
+  return res.deletedCount === 1;
 }

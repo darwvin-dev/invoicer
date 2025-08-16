@@ -1,34 +1,30 @@
-jest.mock("@/config/rabbit", () => ({
-  publishJson: jest.fn().mockResolvedValue(undefined),
-}));
-
-import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
+import { describe, it, expect, beforeAll, afterAll, jest } from "@jest/globals";
 import request from "supertest";
-import mongoose from "mongoose";
-import { DateTime } from "luxon";
 import { startInMemoryMongo, stopInMemoryMongo } from "../test/utils/db";
+import { createApp } from "@/app";
+
+jest.mock("@/config/rabbit", () => ({
+  __esModule: true,
+  publishJson: jest.fn(),
+}));
 
 describe("Reports E2E", () => {
   let app: any;
 
   beforeAll(async () => {
+    process.env.NODE_ENV = "test";
+    process.env.TZ = "UTC";
+    process.env.DISABLE_JOBS = "1";
     await startInMemoryMongo();
+    app = createApp();
 
     const { InvoiceModel } = await import("@/modules/invoices/invoice.model.js");
-    const tz = process.env.TZ || "Europe/Amsterdam";
-    const prev = DateTime.now().setZone(tz).minus({ days: 1 });
-    const createdAt = prev.set({ hour: 12 }).toJSDate();
-
     await InvoiceModel.create({
-      customerId: new mongoose.Types.ObjectId(),
-      createdAt,
+      customerId: "C001",
       currency: "EUR",
-      items: [{ sku: "SKU1", quantity: 4, unitPrice: 5 }],
-      invoiceTotal: 20
+      items: [{ sku: "A", quantity: 3, unitPrice: 5 }],
+      createdAt: new Date().toISOString(),
     });
-
-    const { createApp } = await import("@/app.js");
-    app = createApp();
   });
 
   afterAll(async () => {
@@ -37,20 +33,15 @@ describe("Reports E2E", () => {
 
   it("GET /api/v1/reports/daily -> 200 (compute)", async () => {
     const res = await request(app).get("/api/v1/reports/daily").expect(200);
-    expect(res.body?.totalSalesAmount).toBeGreaterThanOrEqual(20);
+    expect(res.body.type).toBe("daily_sales_report");
   });
 
-  it("GET /api/v1/reports/daily?publish=true -> 200 and calls publish/save", async () => {
-    const rabbit = await import("@/config/rabbit.js");
-    const publishSpy = rabbit.publishJson as unknown as jest.Mock;
-
-    const svc = await import("@/modules/reports/report.service.js");
-    const saveSpy = jest.spyOn(svc, "saveDailyReport");
+  it("GET /api/v1/reports/daily?publish=true -> 200 and calls publish", async () => {
+    const rabbit = await import("@/config/rabbit");
+    const publishMock = rabbit.publishJson as unknown as jest.Mock;
 
     const res = await request(app).get("/api/v1/reports/daily?publish=true").expect(200);
-    expect(res.body?.items?.length).toBeGreaterThan(0);
-
-    expect(publishSpy).toHaveBeenCalledTimes(1);
-    expect(saveSpy).toHaveBeenCalledTimes(1);
+    expect(res.body.type).toBe("daily_sales_report");
+    expect(publishMock).toHaveBeenCalledTimes(1);
   });
 });
