@@ -1,39 +1,35 @@
 import type { Request, Response, NextFunction } from "express";
-import { isValidObjectId } from "mongoose";
-import { StatusCodes, getReasonPhrase } from "http-status-codes";
 import z from "zod";
-import { CustomerModel, type CustomerDoc } from "./customer.model.js";
-import bcrypt from "bcryptjs";
-import { AppError, BadRequestError, ConflictError, NotFoundError } from "@/utils/errors.js";
+import {
+  createCustomer,
+  listCustomers,
+  getCustomerById,
+  updateCustomer,
+  deleteCustomer,
+} from "./customer.service.js";
+import {
+  BadRequestError,
+  UnprocessableEntityError,
+} from "@/utils/errors.js";
 
 const asyncHandler =
   <T extends (...args: any[]) => Promise<any>>(fn: T) =>
     (req: Request, res: Response, next: NextFunction) =>
       fn(req, res, next).catch(next);
 
-const customerProjection = "-passwordHash" as const;
-
-const sanitizeRegex = (q: string) =>
-  new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-
 const createBodySchema = z.object({
   name: z.string().min(2).max(120).trim(),
-  email: z.string().email().max(254).trim().toLowerCase(),
+  email: z.email().max(254).trim().toLowerCase(),
   password: z.string().min(8).max(128),
 });
 
 const updateBodySchema = z
   .object({
     name: z.string().min(2).max(120).trim().optional(),
-    email: z.string().email().max(254).trim().toLowerCase().optional(),
+    email: z.email().max(254).trim().toLowerCase().optional(),
     password: z.string().min(8).max(128).optional(),
   })
-  .refine((data) => !("passwordHash" in data), {
-    message: "Updating passwordHash is not allowed here",
-  })
-  .refine((data) => Object.keys(data).length > 0, {
-    message: "No fields to update",
-  });
+  .refine((d) => Object.keys(d).length > 0, { message: "No fields to update" });
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -46,147 +42,40 @@ const listQuerySchema = z.object({
 });
 
 export class CustomerController {
-  static create = asyncHandler(async (req: Request, res: Response) => {
-    const { password, ...rest } = createBodySchema.parse(req.body);
-
-    try {
-      const saltRounds = Number(process.env.BCRYPT_ROUNDS || 12);
-      const passwordHash = await bcrypt.hash(password, saltRounds);
-
-      const doc = await CustomerModel.create({ ...rest, passwordHash });
-
-      const created = await CustomerModel.findById(doc._id)
-        .select(customerProjection)
-        .lean();
-
-      return res.status(StatusCodes.CREATED).json({ data: created });
-    } catch (err: any) {
-      if (
-        err?.code === 11000 &&
-        (err?.keyPattern?.email || err?.keyValue?.email)
-      ) {
-        throw new ConflictError("Email is already in use");
-      }
-      if (err?.name === "ValidationError") {
-        throw new BadRequestError("Validation failed", err?.errors);
-      }
-      throw err as AppError;
+  static create = asyncHandler(async (req, res) => {
+    const parsed = createBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new UnprocessableEntityError("Validation failed", parsed.error.issues);
     }
+    const data = await createCustomer(parsed.data);
+    return res.status(201).json({ data });
   });
 
-  static getById = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    if (!isValidObjectId(id)) throw new NotFoundError("Invalid id");
-
-    const doc = await CustomerModel.findById(id)
-      .select(customerProjection)
-      .lean();
-    if (!doc) throw new NotFoundError("Customer not found");
-
-    return res.json({ data: doc });
+  static getById = asyncHandler(async (req, res) => {
+    const data = await getCustomerById(req.params.id);
+    return res.json({ data });
   });
 
-  static list = asyncHandler(async (req: Request, res: Response) => {
-    const { page, limit, sort, order, q, createdFrom, createdTo } =
-      listQuerySchema.parse(req.query);
-
-    const skip = (page - 1) * limit;
-
-    const filter: Record<string, any> = {};
-    if (q) {
-      const regex = sanitizeRegex(q);
-      filter.$or = [{ name: regex }, { email: regex }];
+  static list = asyncHandler(async (req, res) => {
+    const parsed = listQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequestError("Invalid query", parsed.error.issues);
     }
-    if (createdFrom || createdTo) {
-      filter.createdAt = {};
-      if (createdFrom) filter.createdAt.$gte = createdFrom;
-      if (createdTo) filter.createdAt.$lte = createdTo;
-    }
-
-    const allowedSorts = new Set<keyof CustomerDoc | "_id">([
-      "createdAt",
-      "name",
-      "email",
-      "_id",
-    ]);
-    const sortField = allowedSorts.has(sort as any)
-      ? (sort as string)
-      : "createdAt";
-    const sortSpec: Record<string, 1 | -1> = {
-      [sortField]: order === "asc" ? 1 : -1,
-      _id: 1,
-    };
-
-    const [items, total] = await Promise.all([
-      CustomerModel.find(filter)
-        .select(customerProjection)
-        .sort(sortSpec)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      CustomerModel.countDocuments(filter),
-    ]);
-
-    return res.json({
-      data: items,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
-        sort: sortField,
-        order,
-        q: q ?? null,
-      },
-    });
+    const result = await listCustomers(parsed.data);
+    return res.json(result); // { data, meta }
   });
 
-  static update = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    if (!isValidObjectId(id)) throw new BadRequestError("Invalid id");
-
-    const body = updateBodySchema.parse(req.body);
-
-    try {
-      if (body.password) {
-        if (body.password.length < 8) {
-          throw new BadRequestError("Password must be at least 8 characters");
-        }
-        const salt = await bcrypt.genSalt(10);
-        body.password = await bcrypt.hash(body.password, salt);
-      } else {
-        delete body.password;
-      }
-
-      const updated = await CustomerModel.findByIdAndUpdate(
-        id,
-        { $set: body },
-        { new: true, runValidators: true, projection: customerProjection }
-      ).lean();
-
-      if (!updated) throw new NotFoundError("Customer not found");
-      return res.json({ data: updated });
-    } catch (err: any) {
-      if (
-        err?.code === 11000 &&
-        (err?.keyPattern?.email || err?.keyValue?.email)
-      ) {
-        throw new ConflictError("Email is already in use");
-      }
-      if (err?.name === "ValidationError") {
-        throw new BadRequestError("Validation failed", err?.errors);
-      }
-      throw err as AppError;
+  static update = asyncHandler(async (req, res) => {
+    const parsed = updateBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new UnprocessableEntityError("Validation failed", parsed.error.issues);
     }
+    const data = await updateCustomer(req.params.id, parsed.data);
+    return res.json({ data });
   });
 
-  static remove = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    if (!isValidObjectId(id)) throw new BadRequestError("Invalid id");
-
-    const deleted = await CustomerModel.deleteOne({ _id: id })
-    if (!deleted) throw new NotFoundError("Customer not found");
-
-    return res.status(StatusCodes.NO_CONTENT).send();
+  static remove = asyncHandler(async (req, res) => {
+    await deleteCustomer(req.params.id);
+    return res.status(204).send();
   });
 }
