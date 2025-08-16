@@ -1,7 +1,7 @@
 import type { Invoice } from '@/types/invoice.js';
 import type { CreateInvoiceInput, ListQueryInput, UpdateInvoiceInput } from './invoice.dto.js';
 import { InvoiceModel } from './invoice.model.js';
-import { isValidObjectId, type FilterQuery } from 'mongoose';
+import { isValidObjectId, Types, type FilterQuery } from 'mongoose';
 import type { InvoiceDoc } from './invoice.model.js';
 import { BadRequestError } from '@/utils/errors.js';
 
@@ -10,12 +10,12 @@ export class NotFoundError extends Error {
   constructor(message = 'Invoice not found') { super(message); this.name = 'NotFoundError'; }
 }
 
-type InvoiceLike = InvoiceDoc & { _id: unknown };
+type InvoiceLike = InvoiceDoc & { _id: unknown; customerId: Types.ObjectId };
 
 function toDomain(doc: InvoiceLike): Invoice {
   return {
     _id: String(doc._id),
-    customerId: doc.customerId,
+    customerId: String(doc.customerId),
     createdAt: doc.createdAt,
     currency: doc.currency,
     items: doc.items,
@@ -64,7 +64,7 @@ export async function updateInvoice(id: string, dto: UpdateInvoiceInput): Promis
   const doc = await InvoiceModel.findById(id);
   if (!doc) throw new NotFoundError();
 
-  if (dto.customerId !== undefined) doc.customerId = dto.customerId;
+  if (dto.customerId !== undefined) doc.customerId = new Types.ObjectId(dto.customerId) as any;
   if (dto.currency   !== undefined) doc.currency = dto.currency;
   if (dto.createdAt  !== undefined) doc.createdAt = new Date(dto.createdAt);
   if (dto.items      !== undefined) doc.items = dto.items as any; 
