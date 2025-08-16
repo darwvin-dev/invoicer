@@ -1,5 +1,5 @@
 import './index.css';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Customers from './pages/Customers';
 import Layout from './components/layouts/Layout';
@@ -14,6 +14,9 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+
+        <Route path="/" element={<Navigate to="/customers" replace />} />
+
         <Route element={<Layout />}>
           <Route path="/customers" element={<Customers />} />
           <Route path="/daily-reports" element={<DailyReports />} />

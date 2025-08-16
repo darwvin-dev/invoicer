@@ -52,15 +52,6 @@ describe("Auth E2E", () => {
         expect(sc).toContain("HttpOnly");
     });
 
-    function pickCookiePair(setCookie: string[] | string, name = 'refresh_token') {
-        const arr = Array.isArray(setCookie) ? setCookie : [setCookie];
-        for (const c of arr) {
-            const pair = c.split(';')[0]; =
-            if (pair.trim().startsWith(`${name}=`)) return pair;
-        }
-        return '';
-    }
-
     it("POST /api/v1/auth/logout -> clears cookie (204)", async () => {
         const login = await request(app)
             .post("/api/v1/auth/login")

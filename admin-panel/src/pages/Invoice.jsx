@@ -52,7 +52,6 @@ const InvoiceManagement = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [customers, setCustomers] = useState([]);
 
-  // Ref for modal to detect outside clicks
   const modalRef = useRef(null);
 
   const {
@@ -99,7 +98,6 @@ const InvoiceManagement = () => {
         const customersRes = await axiosInstance.get('/customers');
         setCustomers(customersRes.data?.data || []);
 
-        // Fetch invoices with new response structure
         const invoicesRes = await axiosInstance.get('/invoices', {
           params: {
             page: currentPage,
@@ -108,8 +106,8 @@ const InvoiceManagement = () => {
           }
         });
 
-        // Handle new response format
-        const { items: invoiceItems, total, page, limit } = invoicesRes.data;
+        const { data: invoiceItems } = invoicesRes.data;
+        const { total, page, limit } = invoicesRes.data.meta;
         setInvoices(invoiceItems || []);
         setTotalPages(Math.ceil(total / limit) || 1);
         setCurrentPage(page);
@@ -132,9 +130,9 @@ const InvoiceManagement = () => {
           q: searchTerm || undefined
         }
       });
-      
-      // Handle new response format
-      const { items: invoiceItems, total, page, limit } = response.data;
+
+      const { data: invoiceItems } = response.data;
+      const { total, page, limit } = response.data.meta;
       setInvoices(invoiceItems || []);
       setTotalPages(Math.ceil(total / limit) || 1);
       setCurrentPage(page);
@@ -202,7 +200,7 @@ const InvoiceManagement = () => {
   const addItem = () => {
     setValue('items', [...items, { sku: '', quantity: 1, unitPrice: 0 }]);
   };
-  
+
   const removeItem = (index) => {
     if (items.length <= 1) return;
     const next = [...items];

@@ -47,6 +47,7 @@ const Customers = () => {
         params: { page: currentPage, limit: itemsPerPage, q: searchTerm || undefined },
         signal,
       });
+      console.log(res)
       const { data, meta } = res.data || {};
       setCustomers(data || []);
       const total = meta?.total ?? 0;

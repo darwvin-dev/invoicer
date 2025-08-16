@@ -3,10 +3,10 @@ import { z } from 'zod';
 
 const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
-  MONGO_URI: z.string().url()
+  MONGO_URI: z.url()
     .or(z.string().startsWith('mongodb://'))
     .or(z.string().startsWith('mongodb+srv://')),
-  RABBITMQ_URL: z.string().url()
+  RABBITMQ_URL: z.url()
     .or(z.string().startsWith('amqp://'))
     .or(z.string().startsWith('amqps://')),
   TZ: z.string().min(1).default('UTC'),
