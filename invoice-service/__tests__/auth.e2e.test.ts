@@ -1,10 +1,8 @@
-// __tests__/auth.e2e.test.ts
 import { describe, it, expect, beforeAll, afterAll, jest } from "@jest/globals";
 import request from "supertest";
 import bcrypt from "bcryptjs";
 import { startInMemoryMongo, stopInMemoryMongo } from "../test/utils/db";
 
-// ❗ static imports — نه await import
 import { createApp } from "@/app";
 import { CustomerModel } from "@/modules/customers/customer.model";
 
